@@ -17,8 +17,13 @@ object Phrases {
     val unigramsPath = args(7)
     val stopWordsPath = args(8)
 
+
+    sparkConf.setMaster(s"local[$numMappers]")
+      .set("spark.rdd.compress","true")
+      .set("spark.storage.memoryFraction", "1")
+      .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+
     val sc = new SparkContext(sparkConf)
-    println(args)
     val bigramsRaw = sc.textFile(bigramsPath, numMappers)
     val bigramTokens = bigramsRaw.map{ line =>
       val tokens = line.split("\t")
