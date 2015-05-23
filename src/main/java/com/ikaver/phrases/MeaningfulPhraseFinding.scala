@@ -9,7 +9,7 @@ import org.apache.spark.{SparkContext, SparkConf}
 
 import scala.collection.mutable.{ListBuffer}
 
-object Phrases {
+object MeaningfulPhraseFinding {
   def main(args: Array[String]) {
     //assumed:
     //structure of bigrams  file is one bigram  per line, with format bigram[TAB]year[TAB]count
