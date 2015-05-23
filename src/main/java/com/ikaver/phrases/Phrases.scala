@@ -9,12 +9,6 @@ import org.apache.spark.{SparkContext, SparkConf}
 
 import scala.collection.mutable.{ListBuffer}
 
-object ScoreOrdering extends Ordering[(String, Double, Double, Double)] {
-  override def compare(x: (String, Double, Double, Double), y: (String, Double, Double, Double)): Int = {
-    y._2 compare x._2
-  }
-}
-
 object Phrases {
   def main(args: Array[String]) {
     //assumed:
@@ -145,4 +139,12 @@ object Phrases {
 
     sc.stop()
   }
+
+  //Simple ordering object to sort bigram records by total score
+  object ScoreOrdering extends Ordering[(String, Double, Double, Double)] {
+    override def compare(x: (String, Double, Double, Double), y: (String, Double, Double, Double)): Int = {
+      y._2 compare x._2
+    }
+  }
+
 }
