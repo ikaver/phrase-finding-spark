@@ -98,14 +98,11 @@ object Phrases {
     val bigramsWithFirstWordCount : RDD[(String, (String, Int, Int, Int))] = groupedByFirstWord.flatMap{ x =>
       val (firstWord, (unigramIter, bigramIter)) = x
       val (unigramFG, _) = unigramIter.head
-      val buf = ListBuffer[(String, (String, Int, Int, Int))]()
-      for( bigram <- bigramIter) {
+      bigramIter.map{ bigram =>
         val (bigramFG, bigramBG) = bigram._2
         //use the second word of the bigram as the key to later to do the same for the second word
-        val newTuple = (bigram._1, (firstWord, bigramFG, bigramBG, unigramFG))
-        buf += newTuple
+        (bigram._1, (firstWord, bigramFG, bigramBG, unigramFG))
       }
-      buf.toList
     }
 
     //group the bigramsWithFirstWordCount with the processedUnigrams RDD to get the counts
@@ -115,13 +112,10 @@ object Phrases {
     val bigramsWithUnigramData: RDD[(String, String, Int, Int, Int, Int)] = groupedBySecondWord.flatMap{ x =>
       val (secondWord, (unigramIter, bigramIter)) = x
       val (unigramFG, _) = unigramIter.head
-      val buf = ListBuffer[(String, String, Int, Int, Int, Int)]()
-      bigramIter.foreach{ bigram =>
+      bigramIter.map{ bigram =>
         val (firstWord, bigramFG, bigramBG, firstFG) = bigram
-        val newTuple = (bigram._1, secondWord, bigramFG, bigramBG, firstFG, unigramFG)
-        buf += newTuple
+        (bigram._1, secondWord, bigramFG, bigramBG, firstFG, unigramFG)
       }
-      buf.toList
     }
 
     //scoresOfBigrams indicates the final score of each bigram
