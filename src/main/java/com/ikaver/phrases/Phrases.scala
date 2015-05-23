@@ -52,7 +52,8 @@ object Phrases {
       if(isFgYear) (tokens(0), (count, 0))
       else (tokens(0), (0, count))
     }.filter{ x =>
-      val words = x._1.split(" ")
+      val bigram = x._1
+      val words = bigram.split(" ")
       !(stopWords.contains(words(0)) || stopWords.contains(words(1)))
     }
     //aggregate bigrams with the same key (sum all FG and BG counts of the same bigrams)
@@ -62,9 +63,9 @@ object Phrases {
 
     //map bigrams to have the first word as the key, to later group with the unigrams RDD
     val processedBigrams = aggregatedBigrams.map{ x =>
-      val bigram = x._1
+      val (bigram, counts) = x
       val words = bigram.split(" ")
-      (words(0), (words(1), x._2))
+      (words(0), (words(1), counts))
     }.persist()
 
     //get uniqueBigrams, totalBigramsFG and totalBigramsBG counts for smoothing
@@ -99,9 +100,9 @@ object Phrases {
       val (firstWord, (unigramIter, bigramIter)) = x
       val (unigramFG, _) = unigramIter.head
       bigramIter.map{ bigram =>
-        val (bigramFG, bigramBG) = bigram._2
+        val (secondWord, (bigramFG, bigramBG)) = bigram
         //use the second word of the bigram as the key to later to do the same for the second word
-        (bigram._1, (firstWord, bigramFG, bigramBG, unigramFG))
+        (secondWord, (firstWord, bigramFG, bigramBG, unigramFG))
       }
     }
 
@@ -114,7 +115,7 @@ object Phrases {
       val (unigramFG, _) = unigramIter.head
       bigramIter.map{ bigram =>
         val (firstWord, bigramFG, bigramBG, firstFG) = bigram
-        (bigram._1, secondWord, bigramFG, bigramBG, firstFG, unigramFG)
+        (firstWord, secondWord, bigramFG, bigramBG, firstFG, unigramFG)
       }
     }
 
