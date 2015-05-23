@@ -7,7 +7,7 @@ import org.apache.spark.SparkContext._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkContext, SparkConf}
 
-import scala.collection.mutable.{ArrayBuffer}
+import scala.collection.mutable.{ListBuffer}
 
 object ScoreOrdering extends Ordering[(String, Double, Double, Double)] {
   override def compare(x: (String, Double, Double, Double), y: (String, Double, Double, Double)): Int = {
@@ -29,7 +29,6 @@ object Phrases {
     val bigramsPath = args(6)
     val unigramsPath = args(7)
     val stopWordsPath = args(8)
-
 
     val sparkConf = new SparkConf().setAppName("Phrases").setMaster(s"local[$numMappers]")
       .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
@@ -56,10 +55,8 @@ object Phrases {
     }.persist()
 
     val totalBigrams = processedBigrams.count()
-
-    val totalBigramCounts = processedBigrams.map{ x => (x._2._2._1.toLong, x._2._2._2.toLong) }.reduce{(x:(Long,Long), y:(Long,Long)) =>
-      (x._1+y._1, x._2+y._2)
-    }
+    val (totalBigramsFG, totalBigramsBG)  = processedBigrams.map{ x => (x._2._2._1.toLong, x._2._2._2.toLong) }
+      .reduce{(x:(Long,Long), y:(Long,Long)) => (x._1+y._1, x._2+y._2) }
 
     val unigramsRaw = sc.textFile(unigramsPath)
     val unigramTokens = unigramsRaw.map{ line =>
@@ -74,22 +71,17 @@ object Phrases {
     }, numReducers).persist()
 
     val totalUnigrams = processedUnigrams.count()
-
-    val totalUnigramCounts = processedUnigrams.map{ x => (x._2._1.toLong, x._2._2.toLong) }.reduce{(x:(Long,Long), y:(Long,Long)) =>
-      (x._1+y._1, x._2+y._2)
-    }
+    val (totalUnigramsFG, _) = processedUnigrams.map{ x => (x._2._1.toLong, x._2._2.toLong) }
+      .reduce{(x:(Long,Long), y:(Long,Long)) => (x._1+y._1, x._2+y._2) }
 
     val groupedByFirstWord = processedUnigrams.cogroup(processedBigrams)
     val bigramsWithFirstWordCount : RDD[(String, (String, Int, Int, Int))] = groupedByFirstWord.flatMap{ x =>
-      val firstWord = x._1
-      val unigramIter = x._2._1
-      val bigramIter = x._2._2
-      val unigramCounts = unigramIter.head
-      val buf = ArrayBuffer[(String, (String, Int, Int, Int))]()
+      val (firstWord, (unigramIter, bigramIter)) = x
+      val (unigramFG, _) = unigramIter.head
+      val buf = ListBuffer[(String, (String, Int, Int, Int))]()
       for( bigram <- bigramIter) {
-        val bigramFG = bigram._2._1
-        val bigramBG = bigram._2._2
-        val newTuple = (bigram._1, (firstWord, bigramFG, bigramBG, unigramCounts._1))
+        val (bigramFG, bigramBG) = bigram._2
+        val newTuple = (bigram._1, (firstWord, bigramFG, bigramBG, unigramFG))
         buf += newTuple
       }
       buf.toList
@@ -97,40 +89,27 @@ object Phrases {
 
     val groupedBySecondWord = processedUnigrams.cogroup(bigramsWithFirstWordCount)
     val bigramsWithUnigramData: RDD[(String, String, Int, Int, Int, Int)] = groupedBySecondWord.flatMap{ x =>
-      val secondWord = x._1
-      val unigramIter = x._2._1
-      val bigramIter = x._2._2
-      val unigramCounts = unigramIter.head
-      val buf = ArrayBuffer[(String, String, Int, Int, Int, Int)]()
+      val (secondWord, (unigramIter, bigramIter)) = x
+      val (unigramFG, _) = unigramIter.head
+      val buf = ListBuffer[(String, String, Int, Int, Int, Int)]()
       bigramIter.foreach{ bigram =>
-        val bigramFG = bigram._2
-        val bigramBG = bigram._3
-        val firstFG = bigram._4
-        val newTuple = (bigram._1, secondWord, bigramFG, bigramBG, firstFG, unigramCounts._1)
+        val (firstWord, bigramFG, bigramBG, firstFG) = bigram
+        val newTuple = (bigram._1, secondWord, bigramFG, bigramBG, firstFG, unigramFG)
         buf += newTuple
       }
       buf.toList
     }
 
-    val totalBigramsFG = totalBigramCounts._1
-    val totalBigramsBG = totalBigramCounts._2
-    val totalUnigramsFG = totalUnigramCounts._1
-
     val scoresOfBigrams = bigramsWithUnigramData.map{ x =>
       def klDivergence(p: Double, q: Double) = {
         p * (Math.log(p) - Math.log(q))
       }
-      val firstWord = x._1
-      val secondWord = x._2
-      val bigramFG = x._3
-      val bigramBG = x._4
-      val firstFG = x._5
-      val secondFG = x._6
+      val (firstWord, secondWord, bigramFG, bigramBG, firstFG, secondFG) = x
 
-      val pBigramFG = (bigramFG + 1).toDouble / (0 + totalBigramsFG).toDouble
-      val pBigramBG = (bigramBG + 1).toDouble / (0 + totalBigramsBG).toDouble
-      val pFirstFG  = (firstFG  + 1).toDouble / (0 + totalUnigramsFG).toDouble
-      val pSecondFG = (secondFG + 1).toDouble / (0 + totalUnigramsFG).toDouble
+      val pBigramFG = (bigramFG + 1).toDouble / (totalBigrams + totalBigramsFG).toDouble
+      val pBigramBG = (bigramBG + 1).toDouble / (totalBigrams + totalBigramsBG).toDouble
+      val pFirstFG  = (firstFG  + 1).toDouble / (totalUnigrams + totalUnigramsFG).toDouble
+      val pSecondFG = (secondFG + 1).toDouble / (totalUnigrams + totalUnigramsFG).toDouble
 
       val phraseness = klDivergence(pBigramFG, pFirstFG * pSecondFG)
       val informativeness = klDivergence(pBigramFG, pBigramBG)
@@ -138,10 +117,7 @@ object Phrases {
     }
 
     scoresOfBigrams.takeOrdered(numBigrams)(ScoreOrdering).foreach{ x =>
-      val bigram = x._1
-      val totalScore = x._2
-      val phrasenessScore = x._3
-      val informativenessScore = x._4
+      val (bigram, totalScore, phrasenessScore, informativenessScore) = x
       println(f"$bigram\t$totalScore%.5f\t$phrasenessScore%.5f\t$informativenessScore%.5f")
     }
 
